@@ -1,0 +1,143 @@
+R Markdown- Practical Machine Learning Project Final
+=======================================================================
+
+Brijesh Jani
+9/3/2017
+
+Project Description/Sources/Goal
+=======================================================================
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.  
+  
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+  
+  
+Starting Up
+======================================================================= 
+  
+Getting necessary packages.
+
+```{r question 1a, echo=TRUE, message=FALSE, warning=FALSE}
+
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+
+```
+
+Loading the data
+
+```{r question 1b, echo=TRUE, message=FALSE, warning=FALSE}
+#downloaded files from previously mentioned urls
+
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile=trainFile)
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile=testFile)
+}
+
+trainRaw <- read.csv("./data/pml-training.csv")
+testRaw <- read.csv("./data/pml-testing.csv")
+dim(trainRaw)
+dim(testRaw)
+
+```
+
+
+Data Cleaning and Prep
+
+1. Kicking out columns where the majority of rows are NA as well as columns that don't logically have relationships with accelerometer measurements
+```{r question 1d, echo=TRUE, message=FALSE, warning=FALSE}
+sum(complete.cases(trainRaw))
+
+trainRaw <- trainRaw[, colSums(is.na(trainRaw)) == 0] 
+testRaw <- testRaw[, colSums(is.na(testRaw)) == 0] 
+
+classe <- trainRaw$classe
+trainRemove <- grepl("^X|timestamp|window", names(trainRaw))
+trainRaw <- trainRaw[, !trainRemove]
+trainCleaned <- trainRaw[, sapply(trainRaw, is.numeric)]
+trainCleaned$classe <- classe
+testRemove <- grepl("^X|timestamp|window", names(testRaw))
+testRaw <- testRaw[, !testRemove]
+testCleaned <- testRaw[, sapply(testRaw, is.numeric)]
+
+
+```
+
+
+2. Creating data for cross validation from training set
+Why: Cross validation to test for model consistency will be used further along in the process. Using a 70/30 split (70% rows in training set, 30% in validation set).
+```{r question 1d1, echo=TRUE, message=FALSE, warning=FALSE}
+set.seed(101112)
+inTrain <- createDataPartition(trainCleaned$classe, p=0.70, list=F)
+trainData <- trainCleaned[inTrain, ]
+testData <- trainCleaned[-inTrain, ]          
+
+```
+
+
+
+Prediction
+
+1. Starting with Random Forest - using 5 fold cross validation in the interest of cpu limitations
+Why: Random Forest selects the most important variables and can manage correlated covariates & outliers
+```{r question 1d3, echo=TRUE, message=FALSE, warning=FALSE}
+controlRf <- trainControl(method="cv", 5)
+modelRf <- train(classe ~ ., data=trainData, method="rf", trControl=controlRf, ntree = 250)
+modelRf
+
+```
+
+2. Measuring the sample error and accuracy of the previous model (with confusion maxtrix)
+```{r question 1d4, echo=TRUE, message=FALSE, warning=FALSE}
+predictRf <- predict(modelRf, testData)
+confusionMatrix(testData$classe, predictRf)
+
+accuracy <- postResample(predictRf, testData$classe)
+accuracy
+oose <- 1 - as.numeric(confusionMatrix(testData$classe, predictRf)$overall[1])
+oose
+```
+Given the high accuracy, this model could be overfitting, but for the purposes of applying the model to the 20 cases for the course project evaluation, I will leave it as is.
+
+3. Applying model to the Test Dataset
+```{r question 1d9, echo=TRUE, message=FALSE, warning=FALSE}
+result <- predict(modelRf, testCleaned[, -length(names(testCleaned))]) #removing problem_id column for simplification
+result
+```
+I received 20/20 answers correct from the course project quiz evaluation exercise.
+
+
+4. Making plots to visualize correlation matrix and decision tree
+```{r question 1d11, echo=TRUE, message=FALSE, warning=FALSE}
+corrPlot <- cor(trainData[, -length(names(trainData))])
+corrplot(corrPlot, method="color")
+
+treeModel <- rpart(classe ~ ., data=trainData, method="class")
+prp(treeModel) 
+``` 
+
